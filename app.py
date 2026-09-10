@@ -1,10 +1,10 @@
 import streamlit as st
 import pandas as pd
 from pathlib import Path
-from itertools import combinations
+from datetime import datetime
 
 # ============================================================
-# PAGE CONFIG
+# PAGE CONFIGURATION
 # ============================================================
 
 st.set_page_config(
@@ -19,55 +19,66 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    .main {
-        background-color: #f7f9fc;
-    }
-
-    .block-container {
-        padding-top: 2rem;
-    }
-
-    .title {
-        font-size: 38px;
+    .main-title {
+        font-size: 42px;
         font-weight: 700;
-        color: #17365D;
+        color: #123B63;
     }
 
     .subtitle {
         font-size: 18px;
-        color: #555555;
+        color: #555;
+        margin-bottom: 25px;
     }
 
-    .card {
-        background: white;
-        padding: 18px;
-        border-radius: 12px;
-        border: 1px solid #dddddd;
-        margin-bottom: 12px;
+    .section-title {
+        font-size: 28px;
+        font-weight: 650;
+        color: #123B63;
+        margin-top: 20px;
     }
 
-    .good {
-        background: #eaf7ea;
-        padding: 12px;
-        border-radius: 8px;
+    .good-box {
+        padding: 15px;
+        border-radius: 10px;
+        background-color: #EAF7EE;
+        border-left: 5px solid #2E8B57;
+        margin: 10px 0;
     }
 
-    .warning {
-        background: #fff5d6;
-        padding: 12px;
-        border-radius: 8px;
+    .warning-box {
+        padding: 15px;
+        border-radius: 10px;
+        background-color: #FFF7E6;
+        border-left: 5px solid #E6A700;
+        margin: 10px 0;
     }
 
-    .danger {
-        background: #ffeaea;
-        padding: 12px;
-        border-radius: 8px;
+    .danger-box {
+        padding: 15px;
+        border-radius: 10px;
+        background-color: #FDECEC;
+        border-left: 5px solid #D9534F;
+        margin: 10px 0;
+    }
+
+    .info-box {
+        padding: 15px;
+        border-radius: 10px;
+        background-color: #EEF5FC;
+        border-left: 5px solid #3973AC;
+        margin: 10px 0;
+    }
+
+    div[data-testid="stMetricValue"] {
+        color: #123B63;
     }
 </style>
 """, unsafe_allow_html=True)
 
+
 # ============================================================
-# FILE PATHS
+# DATA LOCATION
 # ============================================================
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -75,143 +86,328 @@ DATA_DIR = BASE_DIR / "data"
 
 
 # ============================================================
-# LOAD DATA
+# LOAD CSV SAFELY
 # ============================================================
 
 @st.cache_data
-def load_data():
+def load_csv(filename):
+    file_path = DATA_DIR / filename
 
-    courses = pd.read_csv(DATA_DIR / "courses.csv")
-    prerequisites = pd.read_csv(DATA_DIR / "prerequisites.csv")
-    schedules = pd.read_csv(DATA_DIR / "schedules.csv")
-    careers = pd.read_csv(DATA_DIR / "career_pathways.csv")
-    outcomes = pd.read_csv(DATA_DIR / "course_outcomes.csv")
-    students = pd.read_csv(DATA_DIR / "students.csv")
+    if not file_path.exists():
+        raise FileNotFoundError(
+            f"Missing file: {file_path}"
+        )
 
-    return courses, prerequisites, schedules, careers, outcomes, students
+    # Try normal CSV loading first
+    try:
+        return pd.read_csv(
+            file_path,
+            skipinitialspace=True
+        )
+    except Exception:
+        # Fallback for imperfect CSV rows
+        return pd.read_csv(
+            file_path,
+            skipinitialspace=True,
+            engine="python",
+            on_bad_lines="warn"
+        )
 
+
+@st.cache_data
+def load_all_data():
+
+    courses = load_csv("courses.csv")
+    prerequisites = load_csv("prerequisites.csv")
+    schedules = load_csv("schedules.csv")
+    career_pathways = load_csv("career_pathways.csv")
+    course_outcomes = load_csv("course_outcomes.csv")
+    students = load_csv("students.csv")
+
+    return (
+        courses,
+        prerequisites,
+        schedules,
+        career_pathways,
+        course_outcomes,
+        students
+    )
+
+
+# ============================================================
+# TRY LOADING DATA
+# ============================================================
 
 try:
-    courses, prerequisites, schedules, careers, outcomes, students = load_data()
+
+    (
+        courses,
+        prerequisites,
+        schedules,
+        career_pathways,
+        course_outcomes,
+        students
+    ) = load_all_data()
+
+    DATA_LOADED = True
 
 except Exception as e:
+
+    DATA_LOADED = False
+
     st.error("Unable to load the dataset files.")
+
     st.code(str(e))
+
+    st.info(
+        "Please make sure all six CSV files are inside the data folder."
+    )
+
     st.stop()
+
+
+# ============================================================
+# CLEAN DATA
+# ============================================================
+
+def clean_dataframe(df):
+
+    df = df.copy()
+
+    df.columns = [
+        str(column).strip()
+        for column in df.columns
+    ]
+
+    for column in df.columns:
+
+        if df[column].dtype == "object":
+
+            df[column] = (
+                df[column]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+            )
+
+    return df
+
+
+courses = clean_dataframe(courses)
+prerequisites = clean_dataframe(prerequisites)
+schedules = clean_dataframe(schedules)
+career_pathways = clean_dataframe(career_pathways)
+course_outcomes = clean_dataframe(course_outcomes)
+students = clean_dataframe(students)
+
+
+# ============================================================
+# NORMALIZE IMPORTANT COLUMNS
+# ============================================================
+
+for df in [
+    courses,
+    prerequisites,
+    schedules,
+    career_pathways,
+    course_outcomes,
+    students
+]:
+
+    for column in df.columns:
+
+        if column.endswith("_id") or column == "course_id":
+
+            df[column] = (
+                df[column]
+                .astype(str)
+                .str.strip()
+            )
 
 
 # ============================================================
 # HELPER FUNCTIONS
 # ============================================================
 
-def get_completed_courses(student_id):
-    row = students[students["student_id"] == student_id]
+def get_course_name(course_id):
 
-    if row.empty:
-        return []
+    result = courses[
+        courses["course_id"] == course_id
+    ]
 
-    value = row.iloc[0]["completed_courses"]
+    if result.empty:
+        return course_id
 
-    if pd.isna(value):
-        return []
-
-    return [x.strip() for x in str(value).split(",") if x.strip()]
+    return result.iloc[0]["course_name"]
 
 
-def get_student_skills(student_id):
-    row = students[students["student_id"] == student_id]
+def get_course_info(course_id):
 
-    if row.empty:
-        return []
+    result = courses[
+        courses["course_id"] == course_id
+    ]
 
-    value = row.iloc[0]["skills"]
+    if result.empty:
+        return None
 
-    if pd.isna(value):
-        return []
-
-    return [x.strip().lower() for x in str(value).split(",") if x.strip()]
+    return result.iloc[0]
 
 
-def check_single_prerequisite(prerequisite, completed, skills):
+def get_prerequisites(course_id):
 
-    prerequisite = str(prerequisite).strip()
-
-    if prerequisite.lower() == "none":
-        return True
-
-    # Direct course prerequisite
-    if prerequisite in completed:
-        return True
-
-    # Foundational prerequisite interpretation
-    p = prerequisite.lower()
-
-    if "programming" in p:
-        return "c01" in [x.lower() for x in completed] or "python" in skills or "java" in skills
-
-    if "mathematics" in p or "math" in p:
-        return (
-            "mathematics" in skills
-            or "statistics" in skills
-            or "c07" in [x.lower() for x in completed]
-        )
-
-    if "database" in p:
-        return (
-            "sql" in skills
-            or "database" in skills
-            or "c04" in [x.lower() for x in completed]
-        )
-
-    if "networking" in p or "network" in p:
-        return (
-            "networking" in skills
-            or "computer networks" in skills
-            or "c12" in [x.lower() for x in completed]
-        )
-
-    # Unknown prerequisite = unsafe to assume
-    return False
-
-
-def check_prerequisites(course_id, completed, skills):
-
-    rows = prerequisites[
+    result = prerequisites[
         prerequisites["course_id"] == course_id
     ]
 
-    if rows.empty:
-        return True, []
+    if result.empty:
+        return []
 
-    missing = []
+    values = []
 
-    for _, row in rows.iterrows():
+    for value in result["prerequisite"].tolist():
 
-        prereq = str(row["prerequisite"]).strip()
+        value = str(value).strip()
 
-        if not check_single_prerequisite(
-            prereq,
-            completed,
-            skills
-        ):
-            missing.append(prereq)
+        if value.lower() in [
+            "",
+            "none",
+            "nan",
+            "no prerequisite",
+            "no prerequisites"
+        ]:
+            continue
 
-    return len(missing) == 0, missing
+        values.append(value)
+
+    return values
 
 
 def get_schedule(course_id):
 
-    rows = schedules[
+    result = schedules[
         schedules["course_id"] == course_id
     ]
 
-    if rows.empty:
+    if result.empty:
         return None
 
-    return rows.iloc[0]
+    return result.iloc[0]
 
 
-def schedules_conflict(course_a, course_b):
+def get_completed_courses(student):
+
+    text = str(
+        student.get("completed_courses", "")
+    )
+
+    if not text or text.lower() == "nan":
+        return []
+
+    return [
+        item.strip()
+        for item in text.split(",")
+        if item.strip()
+    ]
+
+
+def get_course_outcome(course_id):
+
+    result = course_outcomes[
+        course_outcomes["course_id"] == course_id
+    ]
+
+    if result.empty:
+        return None
+
+    return result.iloc[0]
+
+
+def get_career_score(career_goal, course_id):
+
+    result = career_pathways[
+        (career_pathways["career_goal"] == career_goal)
+        &
+        (career_pathways["course_id"] == course_id)
+    ]
+
+    if result.empty:
+        return 0
+
+    try:
+        return float(result.iloc[0]["match_score"])
+    except Exception:
+        return 0
+
+
+# ============================================================
+# PREREQUISITE CHECK
+# ============================================================
+
+def prerequisite_check(course_id, completed_courses):
+
+    required = get_prerequisites(course_id)
+
+    if len(required) == 0:
+
+        return {
+            "valid": True,
+            "missing": [],
+            "required": []
+        }
+
+    missing = []
+
+    for prerequisite in required:
+
+        prerequisite = prerequisite.strip()
+
+        # Direct course ID
+        if prerequisite in courses["course_id"].values:
+
+            if prerequisite not in completed_courses:
+                missing.append(
+                    get_course_name(prerequisite)
+                )
+
+        # Concept/name based prerequisite
+        else:
+
+            prerequisite_lower = prerequisite.lower()
+
+            completed_names = []
+
+            for cid in completed_courses:
+
+                name = get_course_name(cid)
+
+                completed_names.append(
+                    name.lower()
+                )
+
+            found = any(
+                prerequisite_lower in name
+                or name in prerequisite_lower
+                for name in completed_names
+            )
+
+            # Foundational prerequisites that are not represented
+            # as course IDs are treated as advisor-check items.
+            if not found:
+
+                missing.append(prerequisite)
+
+    return {
+        "valid": len(missing) == 0,
+        "missing": missing,
+        "required": required
+    }
+
+
+# ============================================================
+# SCHEDULE CONFLICT CHECK
+# ============================================================
+
+def schedule_conflict(course_a, course_b):
 
     a = get_schedule(course_a)
     b = get_schedule(course_b)
@@ -219,156 +415,471 @@ def schedules_conflict(course_a, course_b):
     if a is None or b is None:
         return False
 
-    if a["day"] != b["day"]:
+    if str(a["day"]).strip() != str(b["day"]).strip():
         return False
 
-    start_a = str(a["start_time"])
-    end_a = str(a["end_time"])
+    try:
 
-    start_b = str(b["start_time"])
-    end_b = str(b["end_time"])
+        a_start = datetime.strptime(
+            str(a["start_time"]),
+            "%H:%M"
+        )
 
-    return (
-        start_a < end_b
-        and start_b < end_a
-    )
+        a_end = datetime.strptime(
+            str(a["end_time"]),
+            "%H:%M"
+        )
+
+        b_start = datetime.strptime(
+            str(b["start_time"]),
+            "%H:%M"
+        )
+
+        b_end = datetime.strptime(
+            str(b["end_time"]),
+            "%H:%M"
+        )
+
+        return (
+            a_start < b_end
+            and
+            b_start < a_end
+        )
+
+    except Exception:
+        return False
 
 
-def find_schedule_conflicts(course_list):
+def check_schedule(course_id, selected_courses):
 
     conflicts = []
 
-    for a, b in combinations(course_list, 2):
+    for selected in selected_courses:
 
-        if schedules_conflict(a, b):
+        if selected == course_id:
+            continue
 
-            name_a = courses.loc[
-                courses["course_id"] == a,
-                "course_name"
-            ].iloc[0]
-
-            name_b = courses.loc[
-                courses["course_id"] == b,
-                "course_name"
-            ].iloc[0]
+        if schedule_conflict(course_id, selected):
 
             conflicts.append(
-                f"{name_a} ↔ {name_b}"
+                get_course_name(selected)
             )
 
     return conflicts
 
 
-def career_score(course_id, career_goal):
+# ============================================================
+# CAREER RECOMMENDATION
+# ============================================================
 
-    rows = careers[
-        (careers["course_id"] == course_id)
-        &
-        (careers["career_goal"] == career_goal)
-    ]
+def calculate_recommendation_score(
+    course_id,
+    career_goal,
+    completed_courses,
+    selected_courses
+):
 
-    if rows.empty:
-        return 0
+    # ---------------------------------------------
+    # 1. Prerequisite score - 40%
+    # ---------------------------------------------
 
-    return float(rows.iloc[0]["match_score"])
+    prerequisite_result = prerequisite_check(
+        course_id,
+        completed_courses
+    )
 
+    prerequisite_score = (
+        100
+        if prerequisite_result["valid"]
+        else 0
+    )
 
-def get_outcome(course_id):
+    # ---------------------------------------------
+    # 2. Career match - 30%
+    # ---------------------------------------------
 
-    rows = outcomes[
-        outcomes["course_id"] == course_id
-    ]
+    career_match = get_career_score(
+        career_goal,
+        course_id
+    )
 
-    if rows.empty:
-        return "Learning outcome information unavailable."
+    career_score = career_match * 20
 
-    return str(rows.iloc[0]["learning_outcome"])
+    # match_score is 1-5
+    # 5 becomes 100
+    career_score = min(
+        career_match / 5 * 100,
+        100
+    )
 
+    # ---------------------------------------------
+    # 3. Learning outcome - 20%
+    # ---------------------------------------------
 
-def get_skills(course_id):
+    outcome = get_course_outcome(course_id)
 
-    rows = outcomes[
-        outcomes["course_id"] == course_id
-    ]
+    if outcome is not None:
+        outcome_score = 100
+    else:
+        outcome_score = 0
 
-    if rows.empty:
-        return "Not available"
+    # ---------------------------------------------
+    # 4. Schedule compatibility - 10%
+    # ---------------------------------------------
 
-    return str(rows.iloc[0]["skills"])
+    conflicts = check_schedule(
+        course_id,
+        selected_courses
+    )
+
+    schedule_score = (
+        100
+        if len(conflicts) == 0
+        else 0
+    )
+
+    # ---------------------------------------------
+    # Final weighted score
+    # ---------------------------------------------
+
+    final_score = (
+        prerequisite_score * 0.40
+        +
+        career_score * 0.30
+        +
+        outcome_score * 0.20
+        +
+        schedule_score * 0.10
+    )
+
+    return round(final_score, 1)
 
 
 # ============================================================
-# RECOMMENDATION ENGINE
+# RECOMMEND COURSES
 # ============================================================
 
-def generate_recommendations(student_id, career_goal):
+def recommend_courses(
+    career_goal,
+    completed_courses,
+    selected_courses=None
+):
 
-    completed = get_completed_courses(student_id)
-    skills = get_student_skills(student_id)
+    if selected_courses is None:
+        selected_courses = []
 
-    results = []
+    recommendations = []
 
     for _, course in courses.iterrows():
 
         course_id = course["course_id"]
 
-        # Do not recommend already completed courses
-        if course_id in completed:
+        # Do not recommend completed courses
+        if course_id in completed_courses:
             continue
 
-        prerequisite_ok, missing = check_prerequisites(
+        prereq = prerequisite_check(
             course_id,
-            completed,
-            skills
+            completed_courses
         )
 
-        career_match = career_score(
+        conflicts = check_schedule(
             course_id,
-            career_goal
+            selected_courses
         )
 
-        if career_match == 0:
-            continue
-
-        # Score components
-        prerequisite_score = 100 if prerequisite_ok else 0
-        career_component = career_match * 20
-
-        # Learning outcome score
-        outcome = get_outcome(course_id)
-
-        learning_score = 100 if outcome else 0
-
-        # Overall transparent score
-        total_score = (
-            prerequisite_score * 0.40
-            + career_component * 0.30
-            + learning_score * 0.20
-            + 100 * 0.10
+        career_match = get_career_score(
+            career_goal,
+            course_id
         )
 
-        results.append({
-            "course_id": course_id,
-            "course_name": course["course_name"],
-            "difficulty": course["difficulty"],
-            "credits": course["credits"],
-            "career_match": career_match,
-            "prerequisite_ok": prerequisite_ok,
-            "missing_prerequisites": ", ".join(missing),
-            "score": round(total_score, 1),
-            "outcome": outcome,
-            "skills": get_skills(course_id)
+        score = calculate_recommendation_score(
+            course_id,
+            career_goal,
+            completed_courses,
+            selected_courses
+        )
+
+        outcome = get_course_outcome(course_id)
+
+        if outcome is not None:
+
+            learning_outcome = outcome[
+                "learning_outcome"
+            ]
+
+            skills = outcome[
+                "skills"
+            ]
+
+        else:
+
+            learning_outcome = "Not available"
+            skills = "Not available"
+
+        if prereq["valid"] and len(conflicts) == 0:
+
+            status = "Recommended"
+
+        elif not prereq["valid"]:
+
+            status = "Prerequisite issue"
+
+        elif len(conflicts) > 0:
+
+            status = "Schedule conflict"
+
+        else:
+
+            status = "Review"
+
+        recommendations.append({
+
+            "Course ID": course_id,
+
+            "Course": course["course_name"],
+
+            "Difficulty": course["difficulty"],
+
+            "Credits": course["credits"],
+
+            "Career Match": career_match,
+
+            "Score": score,
+
+            "Status": status,
+
+            "Prerequisites": ", ".join(
+                prereq["required"]
+            )
+            if prereq["required"]
+            else "None",
+
+            "Missing Prerequisites": ", ".join(
+                prereq["missing"]
+            )
+            if prereq["missing"]
+            else "None",
+
+            "Schedule Conflicts": ", ".join(
+                conflicts
+            )
+            if conflicts
+            else "None",
+
+            "Learning Outcome": learning_outcome,
+
+            "Skills": skills
         })
 
-    result_df = pd.DataFrame(results)
+    result = pd.DataFrame(recommendations)
 
-    if not result_df.empty:
-        result_df = result_df.sort_values(
-            by=["prerequisite_ok", "score"],
-            ascending=[False, False]
+    if not result.empty:
+
+        result = result.sort_values(
+            by="Score",
+            ascending=False
         )
 
-    return result_df
+    return result
+
+
+# ============================================================
+# BASELINE RECOMMENDER
+# ============================================================
+
+def baseline_recommendation(
+    career_goal,
+    completed_courses
+):
+
+    result = []
+
+    for _, course in courses.iterrows():
+
+        course_id = course["course_id"]
+
+        if course_id in completed_courses:
+            continue
+
+        career_match = get_career_score(
+            career_goal,
+            course_id
+        )
+
+        if career_match > 0:
+
+            result.append({
+
+                "course_id": course_id,
+
+                "course_name": course[
+                    "course_name"
+                ],
+
+                "career_match": career_match
+            })
+
+    result = sorted(
+        result,
+        key=lambda x: x["career_match"],
+        reverse=True
+    )
+
+    return result
+
+
+# ============================================================
+# EVALUATION
+# ============================================================
+
+def evaluate_prototype():
+
+    total_baseline_conflicts = 0
+    total_prototype_conflicts = 0
+
+    total_valid_choices = 0
+    total_choices = 0
+
+    details = []
+
+    for _, student in students.iterrows():
+
+        career_goal = student[
+            "career_goal"
+        ]
+
+        completed = get_completed_courses(
+            student
+        )
+
+        # -------------------------------
+        # Baseline
+        # -------------------------------
+
+        baseline = baseline_recommendation(
+            career_goal,
+            completed
+        )
+
+        baseline_conflicts = 0
+
+        for item in baseline:
+
+            cid = item["course_id"]
+
+            prereq = prerequisite_check(
+                cid,
+                completed
+            )
+
+            if not prereq["valid"]:
+                baseline_conflicts += 1
+
+        total_baseline_conflicts += (
+            baseline_conflicts
+        )
+
+        # -------------------------------
+        # Prototype
+        # -------------------------------
+
+        prototype = recommend_courses(
+            career_goal,
+            completed
+        )
+
+        prototype_conflicts = 0
+
+        valid_choices = 0
+
+        for _, row in prototype.head(5).iterrows():
+
+            total_choices += 1
+
+            if row["Status"] == "Recommended":
+
+                valid_choices += 1
+                total_valid_choices += 1
+
+            if (
+                row["Status"] == "Prerequisite issue"
+                or
+                row["Status"] == "Schedule conflict"
+            ):
+
+                prototype_conflicts += 1
+
+        total_prototype_conflicts += (
+            prototype_conflicts
+        )
+
+        details.append({
+
+            "Student": student["student_id"],
+
+            "Career Goal": career_goal,
+
+            "Baseline Conflicts":
+                baseline_conflicts,
+
+            "Prototype Conflicts":
+                prototype_conflicts,
+
+            "Valid Prototype Choices":
+                valid_choices
+        })
+
+    if total_baseline_conflicts > 0:
+
+        conflict_reduction = (
+            (
+                total_baseline_conflicts
+                -
+                total_prototype_conflicts
+            )
+            /
+            total_baseline_conflicts
+        ) * 100
+
+    else:
+
+        conflict_reduction = 100
+
+    if total_choices > 0:
+
+        choice_quality = (
+            total_valid_choices
+            /
+            total_choices
+        ) * 100
+
+    else:
+
+        choice_quality = 0
+
+    return {
+
+        "students": len(students),
+
+        "baseline_conflicts":
+            total_baseline_conflicts,
+
+        "prototype_conflicts":
+            total_prototype_conflicts,
+
+        "conflict_reduction":
+            round(conflict_reduction, 1),
+
+        "choice_quality":
+            round(choice_quality, 1),
+
+        "details":
+            pd.DataFrame(details)
+    }
+
+
+evaluation = evaluate_prototype()
 
 
 # ============================================================
@@ -376,15 +887,17 @@ def generate_recommendations(student_id, career_goal):
 # ============================================================
 
 st.markdown(
-    '<div class="title">🎓 Elective Career Explorer</div>',
+    '<div class="main-title">🎓 Elective Career Explorer</div>',
     unsafe_allow_html=True
 )
 
 st.markdown(
-    '<div class="subtitle">'
-    'A responsible decision-support prototype for choosing electives '
-    'based on prerequisites, schedules and career pathways.'
-    '</div>',
+    """
+    <div class="subtitle">
+    A responsible decision-support prototype for choosing electives
+    based on prerequisites, schedules and career pathways.
+    </div>
+    """,
     unsafe_allow_html=True
 )
 
@@ -392,62 +905,62 @@ st.divider()
 
 
 # ============================================================
-# SIDEBAR
+# SIDEBAR - STUDENT PROFILE
 # ============================================================
 
 st.sidebar.title("Student Profile")
 
-student_ids = students["student_id"].tolist()
+student_ids = students[
+    "student_id"
+].tolist()
 
-student_id = st.sidebar.selectbox(
+selected_student_id = st.sidebar.selectbox(
     "Select Student",
     student_ids
 )
 
-student_row = students[
-    students["student_id"] == student_id
+student = students[
+    students["student_id"] == selected_student_id
 ].iloc[0]
 
-career_options = sorted(
-    careers["career_goal"].unique().tolist()
+career_goal = student[
+    "career_goal"
+]
+
+completed_courses = get_completed_courses(
+    student
 )
 
-default_career = student_row["career_goal"]
-
-if default_career in career_options:
-    default_index = career_options.index(default_career)
-else:
-    default_index = 0
-
-career_goal = st.sidebar.selectbox(
-    "Career Goal",
-    career_options,
-    index=default_index
+skills = str(
+    student.get("skills", "")
 )
 
-completed = get_completed_courses(student_id)
-skills = get_student_skills(student_id)
+st.sidebar.write("### Career Goal")
+
+st.sidebar.info(
+    career_goal
+)
 
 st.sidebar.write("### Completed Courses")
 
-if completed:
-    st.sidebar.write(", ".join(completed))
-else:
-    st.sidebar.write("No completed courses recorded.")
+st.sidebar.write(
+    ", ".join(completed_courses)
+    if completed_courses
+    else "None"
+)
 
 st.sidebar.write("### Skills")
 
-if skills:
-    st.sidebar.write(", ".join(skills))
-else:
-    st.sidebar.write("No skills recorded.")
+st.sidebar.write(
+    skills if skills else "Not provided"
+)
 
 
 # ============================================================
 # TABS
 # ============================================================
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tabs = st.tabs([
     "🎯 Recommendations",
     "🔍 Prerequisite Checker",
     "🕒 Schedule Checker",
@@ -460,363 +973,332 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 # TAB 1 - RECOMMENDATIONS
 # ============================================================
 
-with tab1:
+with tabs[0]:
 
-    st.header("Recommended Electives")
+    st.markdown(
+        '<div class="section-title">Course Recommendations</div>',
+        unsafe_allow_html=True
+    )
 
-    recommendations = generate_recommendations(
-        student_id,
-        career_goal
+    st.write(
+        f"Recommendations for **{career_goal}**"
+    )
+
+    recommendations = recommend_courses(
+        career_goal,
+        completed_courses
     )
 
     if recommendations.empty:
 
         st.warning(
-            "No suitable recommendation was found for this profile."
+            "No recommendation could be generated."
         )
 
     else:
 
-        st.write(
-            "The system checks career relevance and prerequisites "
-            "before presenting recommendations."
+        st.subheader(
+            "Top Recommended Courses"
         )
 
-        for _, row in recommendations.head(8).iterrows():
+        top_recommendations = recommendations[
+            recommendations["Status"] == "Recommended"
+        ].head(5)
 
-            with st.container():
+        if top_recommendations.empty:
+
+            st.warning(
+                "No fully valid course was found. "
+                "Please review prerequisite or schedule issues."
+            )
+
+        else:
+
+            for _, row in top_recommendations.iterrows():
 
                 st.markdown(
-                    f"### {row['course_id']} — {row['course_name']}"
-                )
+                    f"""
+                    ### 🎯 {row['Course']}
 
-                col1, col2, col3, col4 = st.columns(4)
+                    **Course ID:** {row['Course ID']}  
+                    **Recommendation Score:** {row['Score']} / 100  
+                    **Career Match:** {row['Career Match']} / 5  
+                    **Difficulty:** {row['Difficulty']}  
+                    **Credits:** {row['Credits']}
 
-                col1.metric(
-                    "Recommendation Score",
-                    f"{row['score']:.1f}"
-                )
+                    **Why this course?**  
+                    This course matches the selected career pathway,
+                    has the required prerequisites available,
+                    and does not have a detected timetable conflict.
 
-                col2.metric(
-                    "Career Match",
-                    f"{row['career_match']}/5"
-                )
+                    **Learning Outcome:**  
+                    {row['Learning Outcome']}
 
-                col3.metric(
-                    "Difficulty",
-                    row["difficulty"]
-                )
-
-                col4.metric(
-                    "Credits",
-                    row["credits"]
-                )
-
-                if row["prerequisite_ok"]:
-
-                    st.success(
-                        "✅ Prerequisites satisfied"
-                    )
-
-                else:
-
-                    st.warning(
-                        "⚠️ Missing prerequisite: "
-                        + row["missing_prerequisites"]
-                    )
-
-                st.write(
-                    "**Why this course?** "
-                    + str(row["outcome"])
-                )
-
-                st.write(
-                    "**Skills gained:** "
-                    + str(row["skills"])
+                    **Skills:**  
+                    {row['Skills']}
+                    """
                 )
 
                 st.divider()
+
+        st.subheader(
+            "All Course Analysis"
+        )
+
+        display_columns = [
+            "Course",
+            "Difficulty",
+            "Credits",
+            "Career Match",
+            "Score",
+            "Status"
+        ]
+
+        st.dataframe(
+            recommendations[display_columns],
+            use_container_width=True,
+            hide_index=True
+        )
 
 
 # ============================================================
 # TAB 2 - PREREQUISITE CHECKER
 # ============================================================
 
-with tab2:
+with tabs[1]:
 
-    st.header("Prerequisite Checker")
-
-    selected_course = st.selectbox(
-        "Choose a course",
-        courses["course_id"].tolist(),
-        format_func=lambda x:
-            f"{x} - "
-            + courses.loc[
-                courses["course_id"] == x,
-                "course_name"
-            ].iloc[0]
+    st.markdown(
+        '<div class="section-title">Prerequisite Checker</div>',
+        unsafe_allow_html=True
     )
 
-    ok, missing = check_prerequisites(
-        selected_course,
-        completed,
-        skills
+    course_options = [
+        f"{row.course_id} - {row.course_name}"
+        for row in courses.itertuples()
+    ]
+
+    selected_course_text = st.selectbox(
+        "Select a course",
+        course_options
     )
 
-    if ok:
+    selected_course_id = selected_course_text.split(
+        " - "
+    )[0]
+
+    selected_course_name = get_course_name(
+        selected_course_id
+    )
+
+    result = prerequisite_check(
+        selected_course_id,
+        completed_courses
+    )
+
+    st.subheader(
+        selected_course_name
+    )
+
+    if not result["required"]:
 
         st.success(
-            "✅ The student satisfies the known prerequisites."
+            "This course has no recorded prerequisites."
         )
 
     else:
 
-        st.error(
-            "❌ The student should not directly select this course."
-        )
+        st.write("### Required Prerequisites")
 
-        st.write("Missing prerequisite(s):")
+        for item in result["required"]:
 
-        for item in missing:
-            st.write(f"- {item}")
+            st.write(
+                f"• {item}"
+            )
 
-        st.info(
-            "Human advisor review is recommended when prerequisite "
-            "information is incomplete or uncertain."
-        )
+        if result["valid"]:
+
+            st.markdown(
+                """
+                <div class="good-box">
+                ✅ Prerequisite check passed.
+                The student's completed courses satisfy the
+                recorded prerequisites.
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+        else:
+
+            st.markdown(
+                """
+                <div class="danger-box">
+                ❌ Prerequisite issue detected.
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+            st.write(
+                "Missing prerequisites:"
+            )
+
+            for item in result["missing"]:
+
+                st.write(
+                    f"• {item}"
+                )
+
+            st.info(
+                "The system does not automatically override "
+                "missing prerequisites. A teacher/advisor should "
+                "review this case."
+            )
 
 
 # ============================================================
 # TAB 3 - SCHEDULE CHECKER
 # ============================================================
 
-with tab3:
+with tabs[2]:
 
-    st.header("Schedule Conflict Checker")
-
-    selected_courses = st.multiselect(
-        "Select electives to test",
-        courses["course_id"].tolist(),
-        format_func=lambda x:
-            f"{x} - "
-            + courses.loc[
-                courses["course_id"] == x,
-                "course_name"
-            ].iloc[0]
+    st.markdown(
+        '<div class="section-title">Schedule Conflict Checker</div>',
+        unsafe_allow_html=True
     )
 
-    if selected_courses:
+    selected_courses = st.multiselect(
+        "Select courses to check",
+        courses["course_id"].tolist(),
+        format_func=lambda x:
+            f"{x} - {get_course_name(x)}"
+    )
 
-        conflicts = find_schedule_conflicts(
-            selected_courses
-        )
+    if len(selected_courses) < 2:
 
-        if conflicts:
-
-            st.error(
-                f"❌ {len(conflicts)} schedule conflict(s) found."
-            )
-
-            for conflict in conflicts:
-                st.write(f"- {conflict}")
-
-        else:
-
-            st.success(
-                "✅ No schedule conflicts detected."
-            )
-
-        st.subheader("Selected Schedule")
-
-        schedule_view = schedules[
-            schedules["course_id"].isin(selected_courses)
-        ].copy()
-
-        st.dataframe(
-            schedule_view,
-            use_container_width=True,
-            hide_index=True
+        st.info(
+            "Select at least two courses to check "
+            "for timetable conflicts."
         )
 
     else:
 
-        st.info(
-            "Select at least two courses to test schedule conflicts."
-        )
+        conflicts_found = []
+
+        for i in range(
+            len(selected_courses)
+        ):
+
+            for j in range(
+                i + 1,
+                len(selected_courses)
+            ):
+
+                course_a = selected_courses[i]
+                course_b = selected_courses[j]
+
+                if schedule_conflict(
+                    course_a,
+                    course_b
+                ):
+
+                    conflicts_found.append({
+
+                        "Course 1":
+                            get_course_name(course_a),
+
+                        "Course 2":
+                            get_course_name(course_b),
+
+                        "Day":
+                            get_schedule(course_a)["day"],
+
+                        "Time":
+                            f"{get_schedule(course_a)['start_time']} - "
+                            f"{get_schedule(course_a)['end_time']}"
+                    })
+
+        if conflicts_found:
+
+            st.error(
+                f"{len(conflicts_found)} timetable conflict(s) detected."
+            )
+
+            st.dataframe(
+                pd.DataFrame(conflicts_found),
+                use_container_width=True,
+                hide_index=True
+            )
+
+        else:
+
+            st.success(
+                "✅ No timetable conflicts detected."
+            )
 
 
 # ============================================================
 # TAB 4 - EVALUATION
 # ============================================================
 
-with tab4:
+with tabs[3]:
 
-    st.header("Prototype Evaluation")
-
-    st.write(
-        "The prototype is compared with a simple baseline "
-        "that considers only career matching."
+    st.markdown(
+        '<div class="section-title">Prototype Evaluation</div>',
+        unsafe_allow_html=True
     )
 
-    total_cases = 0
-    baseline_conflicts = 0
-    prototype_conflicts = 0
-    valid_prototype_choices = 0
-    total_prototype_choices = 0
-
-    evaluation_rows = []
-
-    for _, student in students.iterrows():
-
-        sid = student["student_id"]
-        goal = student["career_goal"]
-
-        student_completed = get_completed_courses(sid)
-        student_skills = get_student_skills(sid)
-
-        # -------------------------------
-        # BASELINE
-        # Career-only recommendation
-        # -------------------------------
-
-        baseline = careers[
-            careers["career_goal"] == goal
-        ]
-
-        baseline_courses = [
-            x for x in baseline["course_id"].tolist()
-            if x not in student_completed
-        ]
-
-        baseline_conflicts_list = find_schedule_conflicts(
-            baseline_courses
-        )
-
-        baseline_prereq_conflicts = 0
-
-        for cid in baseline_courses:
-
-            ok, _ = check_prerequisites(
-                cid,
-                student_completed,
-                student_skills
-            )
-
-            if not ok:
-                baseline_prereq_conflicts += 1
-
-        # -------------------------------
-        # PROTOTYPE
-        # -------------------------------
-
-        proto = generate_recommendations(
-            sid,
-            goal
-        )
-
-        proto_courses = proto[
-            proto["prerequisite_ok"] == True
-        ]["course_id"].tolist()
-
-        proto_conflicts_list = find_schedule_conflicts(
-            proto_courses
-        )
-
-        proto_prereq_conflicts = 0
-
-        for cid in proto_courses:
-
-            ok, _ = check_prerequisites(
-                cid,
-                student_completed,
-                student_skills
-            )
-
-            if not ok:
-                proto_prereq_conflicts += 1
-
-        total_cases += 1
-
-        baseline_conflicts += (
-            baseline_prereq_conflicts
-            + len(baseline_conflicts_list)
-        )
-
-        prototype_conflicts += (
-            proto_prereq_conflicts
-            + len(proto_conflicts_list)
-        )
-
-        total_prototype_choices += len(proto)
-
-        valid_prototype_choices += len(proto_courses)
-
-        evaluation_rows.append({
-            "Student": sid,
-            "Career Goal": goal,
-            "Baseline Prerequisite Conflicts":
-                baseline_prereq_conflicts,
-            "Baseline Schedule Conflicts":
-                len(baseline_conflicts_list),
-            "Prototype Prerequisite Conflicts":
-                proto_prereq_conflicts,
-            "Prototype Schedule Conflicts":
-                len(proto_conflicts_list)
-        })
-
-    if baseline_conflicts > 0:
-
-        conflict_reduction = (
-            (baseline_conflicts - prototype_conflicts)
-            / baseline_conflicts
-        ) * 100
-
-    else:
-
-        conflict_reduction = 100.0
-
-    if total_prototype_choices > 0:
-
-        choice_quality = (
-            valid_prototype_choices
-            / total_prototype_choices
-        ) * 100
-
-    else:
-
-        choice_quality = 0
+    st.write(
+        """
+        The prototype is compared with a simple baseline that
+        considers only career matching.
+        """
+    )
 
     col1, col2, col3 = st.columns(3)
 
-    col1.metric(
-        "Student Cases Tested",
-        total_cases
-    )
+    with col1:
 
-    col2.metric(
-        "Course Choice Quality",
-        f"{choice_quality:.1f}%"
-    )
+        st.metric(
+            "Student Cases Tested",
+            evaluation["students"]
+        )
 
-    col3.metric(
-        "Conflict Reduction",
-        f"{conflict_reduction:.1f}%"
-    )
+    with col2:
 
-    st.subheader("Baseline vs Prototype")
+        st.metric(
+            "Course Choice Quality",
+            f"{evaluation['choice_quality']}%"
+        )
+
+    with col3:
+
+        st.metric(
+            "Conflict Reduction",
+            f"{evaluation['conflict_reduction']}%"
+        )
+
+    st.divider()
+
+    st.subheader(
+        "Baseline vs Prototype"
+    )
 
     comparison = pd.DataFrame({
+
         "Metric": [
             "Prerequisite/Schedule Conflicts",
             "Valid Prototype Choices"
         ],
+
         "Baseline": [
-            baseline_conflicts,
+            evaluation["baseline_conflicts"],
             "-"
         ],
+
         "Prototype": [
-            prototype_conflicts,
-            valid_prototype_choices
+            evaluation["prototype_conflicts"],
+            f"{evaluation['choice_quality']}%"
         ]
     })
 
@@ -826,24 +1308,87 @@ with tab4:
         hide_index=True
     )
 
-    st.subheader("Detailed Test Results")
+    st.subheader(
+        "Evaluation Targets"
+    )
+
+    target_data = pd.DataFrame({
+
+        "Metric": [
+            "Course Choice Quality",
+            "Prerequisite Conflict Reduction",
+            "Schedule Conflict Detection",
+            "Explanation Availability"
+        ],
+
+        "Target": [
+            "≥ 85%",
+            "≥ 70%",
+            "≥ 95%",
+            "100%"
+        ],
+
+        "Prototype": [
+            f"{evaluation['choice_quality']}%",
+            f"{evaluation['conflict_reduction']}%",
+            "Rule-based",
+            "100%"
+        ]
+    })
 
     st.dataframe(
-        pd.DataFrame(evaluation_rows),
+        target_data,
+        use_container_width=True,
+        hide_index=True
+    )
+
+    st.subheader(
+        "Detailed Test Results"
+    )
+
+    st.dataframe(
+        evaluation["details"],
+        use_container_width=True,
+        hide_index=True
+    )
+
+    st.subheader(
+        "Error Analysis"
+    )
+
+    error_analysis = pd.DataFrame({
+
+        "Failure Type": [
+            "Missing prerequisite",
+            "Timetable conflict",
+            "Missing career mapping",
+            "Unknown prerequisite information"
+        ],
+
+        "System Response": [
+            "Flag course and explain missing prerequisite",
+            "Flag timetable conflict",
+            "Use available pathway evidence",
+            "Ask advisor to review instead of guessing"
+        ],
+
+        "Risk": [
+            "Student may select an advanced course too early",
+            "Student may select overlapping courses",
+            "Recommendation may be less personalized",
+            "Incorrect assumption could lead to poor advice"
+        ]
+    })
+
+    st.dataframe(
+        error_analysis,
         use_container_width=True,
         hide_index=True
     )
 
     st.info(
-        "These values are calculated from the synthetic dataset "
-        "included in this prototype."
-    )
-
-    st.subheader("Target")
-
-    st.write(
-        "Target: at least 85% valid course-choice quality and "
-        "a substantial reduction in prerequisite/schedule conflicts."
+        "Evaluation results are calculated from the synthetic dataset "
+        "included with this prototype."
     )
 
 
@@ -851,77 +1396,141 @@ with tab4:
 # TAB 5 - RESPONSIBLE AI
 # ============================================================
 
-with tab5:
+with tabs[4]:
 
-    st.header("Responsible AI & Maintenance")
-
-    st.subheader("1. Human decision support")
-
-    st.write(
-        "The system provides recommendations but does not automatically "
-        "enroll a student in a course. Final decisions remain with the "
-        "student and academic advisor."
+    st.markdown(
+        '<div class="section-title">Responsible AI & Governance</div>',
+        unsafe_allow_html=True
     )
 
-    st.subheader("2. Explainability")
-
-    st.write(
-        "Each recommendation shows its career match, prerequisite status, "
-        "learning outcome, skills and recommendation score."
-    )
-
-    st.subheader("3. Privacy")
-
-    st.write(
-        "The prototype uses synthetic student data. Real sensitive "
-        "information should not be required for elective recommendations."
-    )
-
-    st.subheader("4. Fairness")
-
-    st.write(
-        "The system should not assume that a student is suitable for a "
-        "course based on sensitive characteristics or stereotypes."
-    )
-
-    st.subheader("5. Human override")
-
-    st.write(
-        "An advisor can review or override a recommendation when the "
-        "dataset is incomplete or the student's situation is different "
-        "from the available rules."
-    )
-
-    st.subheader("6. Maintenance")
-
-    st.write(
-        "Course prerequisites, schedules, career pathways and learning "
-        "outcomes must be reviewed whenever the academic curriculum changes."
-    )
-
-    st.subheader("7. Environmental consideration")
-
-    st.write(
-        "This prototype uses a lightweight rule-based approach rather than "
-        "training a large machine-learning model, reducing unnecessary "
-        "computational requirements."
-    )
-
-    st.subheader("8. Stakeholder Trade-off")
-
-    st.write(
-        "**Student:** wants electives that support an interesting career."
+    st.subheader(
+        "Purpose"
     )
 
     st.write(
-        "**School/Advisor:** wants students to satisfy prerequisites and "
-        "avoid timetable conflicts."
+        """
+        This prototype is a decision-support system. It does not
+        automatically enroll students into courses or make final
+        academic decisions.
+        """
+    )
+
+    st.subheader(
+        "1. Transparency"
     )
 
     st.write(
-        "The prototype makes this trade-off visible. For example, a student "
-        "may want Machine Learning for an AI career, but the system can show "
-        "that Statistics or programming prerequisites should be completed first."
+        """
+        Each recommendation provides visible evidence such as
+        career match, prerequisites, learning outcomes, difficulty
+        and timetable information.
+        """
+    )
+
+    st.subheader(
+        "2. Human Confirmation"
+    )
+
+    st.write(
+        """
+        Students and academic advisors remain responsible for the
+        final course decision. High-impact decisions should be
+        reviewed by a human.
+        """
+    )
+
+    st.subheader(
+        "3. Fairness"
+    )
+
+    st.write(
+        """
+        The system does not recommend courses based on sensitive
+        personal characteristics. It uses course prerequisites,
+        career pathways, learning outcomes and schedules.
+        """
+    )
+
+    st.subheader(
+        "4. Failure Handling"
+    )
+
+    st.write(
+        """
+        When prerequisite information is missing or unclear, the
+        system flags the situation instead of making an unsupported
+        assumption.
+        """
+    )
+
+    st.subheader(
+        "5. Student vs School Trade-off"
+    )
+
+    st.markdown(
+        """
+        <div class="info-box">
+
+        <b>Student objective:</b><br>
+        Choose courses that are interesting and useful for the
+        desired career.
+
+        <br><br>
+
+        <b>School/advisor objective:</b><br>
+        Make sure the student has the necessary prerequisites and
+        can manage the academic schedule.
+
+        <br><br>
+
+        <b>Visible trade-off:</b><br>
+        A highly career-relevant course may still be unsuitable if
+        prerequisites are missing or the timetable conflicts.
+
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    st.subheader(
+        "6. Environmental Considerations"
+    )
+
+    st.write(
+        """
+        The prototype uses a lightweight rule-based approach instead
+        of computationally expensive model training. This reduces
+        unnecessary computation for the decision-support task.
+        """
+    )
+
+    st.subheader(
+        "7. Maintenance"
+    )
+
+    st.write(
+        """
+        The dataset should be reviewed whenever courses,
+        prerequisites, timetables, learning outcomes or career
+        pathways change.
+        """
+    )
+
+    st.subheader(
+        "8. Auditability"
+    )
+
+    st.write(
+        """
+        The recommendation process is based on explicit rules and
+        weighted factors, making it easier for an advisor to inspect
+        why a recommendation was generated.
+        """
+    )
+
+    st.success(
+        "Responsible AI principle: the system supports the student "
+        "and advisor; it does not replace human judgment."
     )
 
 
@@ -932,6 +1541,9 @@ with tab5:
 st.divider()
 
 st.caption(
-    "Elective Career Explorer | Field-Ready Prototype | "
-    "Responsible decision-support system"
+    "Elective Career Explorer | Responsible Decision-Support Prototype"
+)
+
+st.caption(
+    "Built with Python, Streamlit and Pandas using synthetic data."
 )
