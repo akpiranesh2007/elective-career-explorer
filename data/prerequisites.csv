@@ -1,0 +1,26 @@
+course_id,prerequisite
+C01,Programming Fundamentals
+C02,C01
+C03,C01
+C04,Database Fundamentals
+C05,C01
+C06,C03
+C07,Mathematics
+C08,C01
+C08,C07
+C09,C08
+C10,C07
+C10,Database Fundamentals
+C11,C12
+C12,Networking Fundamentals
+C13,C12
+C14,C11
+C14,C06
+C15,C03
+C15,C07
+C16,C01
+C17,None
+C18,C10
+C18,C11
+C19,C08
+C20,None
